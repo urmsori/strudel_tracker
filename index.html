@@ -351,6 +351,10 @@ body:not(.dual) .vis { height: 4.6em; }
 .screen.is-live .side, .screen.is-live .vis { display: none; }
 .screen.is-live .body { grid-template-columns: 1fr; }
 .screen.is-live .main { width: 100%; }
+.screen.is-smp .side, .screen.is-smp .vis { display: none; }
+.screen.is-smp .body { grid-template-columns: 1fr; }
+.screen.is-smp .main { width: 100%; }
+.main .wave { display: block; width: 100%; height: 132px; border-radius: 4px; margin: 2px 0 6px; }
 
 .crumb { display: flex; align-items: center; gap: .6em; height: 1.35em; margin: -.1em 0 .25em; font-size: .86em; white-space: nowrap; overflow: hidden; }
 .crumb .path { flex: 1 1 auto; overflow: hidden; text-overflow: clip; }
@@ -402,6 +406,7 @@ const FILTERS = ['OFF','LPF','HPF','BPF'];
 const IFIELDS = [
   { k:'name',  l:'NAME',    t:'text' },
   { k:'snd',   l:'SOUND',   t:'sound' },
+  { k:'smp',   l:'SAMPLER', t:'sampler', when: i => String(i.snd).startsWith('my_') },
   { k:'sn',    l:'SAMPLE #',t:'byte', when: i => isSampleSnd(i.snd), show: b => '.n(' + b + ')' },
   { k:'kt',    l:'KEYTRACK',t:'enum', opts: ['ON', 'OFF'], show: v => v === 'ON' ? 'ON  노트 따라 음높이' : 'OFF 원래 음높이 고정' },
   { k:'beg',   l:'START',   t:'byte', when: i => isSampleSnd(i.snd), show: b => b ? Math.round(b / 2.55) + '%' : '처음부터' },
@@ -452,7 +457,7 @@ function newInstr(name = 'SYNTH', over = {}) {
 function instrParams(ins, bpm) {
   const p = [];
   p.push(['s', ins.snd === 'custom' ? (ins.sname || 'bd') : ins.snd]);
-  if (isSampleSnd(ins.snd)) { if (ins.sn) p.push(['n', ins.sn]); if (ins.beg) p.push(['begin', +(ins.beg / 255).toFixed(3)]); if (ins.cutg) p.push(['cut', ins.cutg]); }
+  if (isSampleSnd(ins.snd)) { if (ins.sn) p.push(['n', ins.sn]); if (ins.beg && !ins.smp) p.push(['begin', +(ins.beg / 255).toFixed(3)]); if (ins.cutg) p.push(['cut', ins.cutg]); if (ins.smp) p.push(...smpParams(ins)); }
   p.push(['attack', Math.max(0.001, envT(ins.att))]);
   p.push(['decay', Math.max(0.001, envT(ins.dec))]);
   p.push(['sustain', +(ins.sus / 255).toFixed(3)]);
@@ -728,6 +733,7 @@ function instrChain(ins, bpm) {
   const tsp = signed(ins.tsp || 0);
   if (tsp) c = `.add(note(${tsp}))` + c;
   if (ins.kt === 'OFF') c += '.note(36)';
+  if (ins.smp && isSampleSnd(ins.snd)) c += smpSliceCode(ins);           // SLICES: the note picks the slice
   return c + (ins.fx || []).join('') + dotted(ins.code);
 }
 
@@ -935,7 +941,8 @@ Object.assign(I18N_EN, {"Strudel식 그림: 피아노롤·펀치카드·스파�
 Object.assign(I18N_EN, {"📂 여기를 클릭/탭해서 파일 고르기": "📂 Click/tap here to choose files", "컨트롤러로는 파일 창을 열 수 없어요: 화면의 버튼을 클릭/탭하세요": "A controller can't open the file dialog: click/tap the button on screen"});
 Object.assign(I18N_EN, {"셋잇단 스윙": "triplet swing", "1마디 = 12칸 (박마다 셋잇단 3칸)": "1 bar = 12 steps (3 triplet steps per beat)", "1마디 = 16칸 (16분음표)": "1 bar = 16 steps (16th notes)", "스윙 그리드: 1마디 = 12칸. 새 프레이즈는 12칸": "Swing grid: 1 bar = 12 steps. New phrases are 12 steps", "직선 그리드: 1마디 = 16칸": "Straight grid: 1 bar = 16 steps", "바꾸기": "Toggle", "스윙 4박": "Swing four", "스윙 2·4박": "Swing 2 & 4", "스윙 고스트": "Swing ghosts", "스윙 라이드": "Swing ride", "스윙 엇박": "Swing offbeats", "워킹 (스윙)": "Walking (swing)", "찰스턴 컴핑": "Charleston comp"});
 Object.assign(I18N_EN, {"스윙·재즈 (셋잇단 스윙 그리드)": "Swing · jazz (triplet swing grid)", "일렉트로 스윙 · ♩124": "electro swing · ♩124", "스윙 재즈 콤보 · ♩140": "swing jazz combo · ♩140", "재즈 발라드 · ♩72": "jazz ballad · ♩72", " swing · ": " swing · ", "PLAY (GM 악기는 처음에 한 번 받아요)": "PLAY (GM instruments download once)"});
-Object.assign(I18N_EN, {"피아노 일렉트로 스윙": "piano electro swing", "▶ 노래 속 ": "▶ In the song, slot ", " 자리에서 듣는 중: ": " now plays: ", " · A 확정 · B 되돌리기": " · A keep · B undo", " 받는 중… 먼저 비슷한 신스 소리로 들려요": " downloading… a similar synth plays meanwhile", ": 받지 못해 신스 소리로 들려요 (인터넷 연결 확인)": ": download failed, a synth stand-in plays (check your connection)", " 준비됨": " ready", "  ▲▼ 노래 속에서 듣기": "  ▲▼ hear in song"});
+Object.assign(I18N_EN, {"✎ 다듬기": "✎ shape it", "원본 그대로": "untouched original", "A: 샘플러 열기 (START·END·REVERSE·SLICES…)": "A: open the sampler (START·END·REVERSE·SLICES…)", "◀▶ 값 · A 자동/실행 · Y 듣기 · SAVE 로 저장": "◀▶ value · A auto/do · Y hear · SAVE to keep", "★ 내가 가져온 소리 · X: 지우기 · INSTR → SAMPLER 로 다듬기": "★ my sound · X: delete · shape it in INSTR → SAMPLER", "s · A: 멈추고 샘플러로": "s · A: stop and open the sampler", "샘플러: ": "Sampler: ", " · 원본은 그대로, 설정만 바뀌어요": " · the original stays, only settings change", " · 다듬고 SAVE 로 저장 (아직 저장 안 됨)": " · shape it, then SAVE (not saved yet)", "이 소리는 샘플러에서 열 수 없어요: ": "This sound can't be opened in the sampler: ", "내 소리(★)로 만든 악기만 샘플러에서 다듬을 수 있어요": "Only instruments made from my sounds (★) can be shaped in the sampler", "이 소리의 원본을 찾을 수 없어요 (브라우저 저장소)": "The original of this sound wasn't found (browser storage)", "저장하지 않은 샘플이에요 · B 한 번 더 = 저장 안 하고 나가기": "This sample isn't saved · B again = leave without saving", "샘플러를 닫았어요": "Sampler closed", "저장됨 ★ ": "Saved ★ ", ".release · 노트가 끝난 뒤": ".release · after the note ends", ".gain · 피크 ": ".gain · peak ", "dB · A 노멀라이즈": "dB · A normalize", ".speed(-) 거꾸로": ".speed(-) backwards", "음높이 그대로 (드럼·효과음)": "pitch fixed (drums · fx)", "건반처럼 음높이 따라감": "follows the keys like an instrument", "노트마다 조각: C2=1번 C#2=2번…": "a slice per note: C2=1, C#2=2…", "원래 음높이 · A 자동 찾기": "original pitch · A detect", ".loop · 길게 누르면 계속 울림": ".loop · rings while held", "조각 · ": "slices · ", "소리가 시작되는 곳마다": "at every hit", "똑같이 나누기": "equal parts", "노트 ": "note ", "설정 저장": "save settings", "MY SOUNDS 에 저장": "save to MY SOUNDS", "새 소리로 저장": "save as new sound", "원본을 복사해 새 이름으로": "copies the original under a new name", "조용한 부분을 잘라냈어요 (자동)": "Trimmed the silence (auto)", "노멀라이즈: 피크 -1dB": "Normalized: peak -1dB", "음높이 찾음: ": "Pitch found: ", "음높이를 찾지 못했어요 (짧거나 소음)": "No pitch found (too short or noisy)", "소리가 시작되는 곳 ": "Found ", "개를 찾았어요": " hits", "항목": "row", "나가기": "leave", "샘플러 열기": "open sampler", "▲▼ 항목 ◀▶ 값": "▲▼ row ◀▶ value", "▲▼ 크게": "▲▼ coarse", "자동·실행": "auto · do", "· 길이 ": "· length "});
+Object.assign(I18N_EN, {"+ 새 악기 · 사운드 고르기": "+ New instrument · pick a sound", "+ 새 악기": "+ New instrument", "사운드 고르기": "pick a sound", "신스·GM·샘플·내 소리": "synth · GM · samples · mine", "피아노 일렉트로 스윙": "piano electro swing", "▶ 노래 속 ": "▶ In the song, slot ", " 자리에서 듣는 중: ": " now plays: ", " · A 확정 · B 되돌리기": " · A keep · B undo", " 받는 중… 먼저 비슷한 신스 소리로 들려요": " downloading… a similar synth plays meanwhile", ": 받지 못해 신스 소리로 들려요 (인터넷 연결 확인)": ": download failed, a synth stand-in plays (check your connection)", " 준비됨": " ready", "  ▲▼ 노래 속에서 듣기": "  ▲▼ hear in song"});
 (() => { const esc2 = s => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
   Object.keys(I18N_EN).forEach(k => { const e = esc2(k); if (e !== k) I18N_EN[e] = esc2(I18N_EN[k]); }); })();
 let LANG = (() => { try { return localStorage.getItem('strudel-tracker-lang') || 'en'; } catch (e) { return 'en'; } })();
@@ -1145,6 +1152,7 @@ function editRepeat(dir) {
   return false;
 }
 function editValue(dir) {
+  if (ui.view === 'sampler' && SM) { smAdjust(dir, true); return; }
   if (editRepeat(dir)) return;
   const v = ui.view, k = ui.cur[v];
   if (v === 'song') {
@@ -1217,6 +1225,7 @@ function editValue(dir) {
 }
 
 function editTap() {
+  if (ui.view === 'sampler' && SM) { smTap(); return; }
   const v = ui.view, k = ui.cur[v];
   const key = v + ':' + k.r + ':' + k.c, now = performance.now();
   const dbl = ui.lastTap.key === key && now - ui.lastTap.t < 380;
@@ -1253,6 +1262,7 @@ function editTap() {
     if (f.t === 'fxlist') { openFxView('ins', ui.instr); return; }
     if (f.k === 'name') { pickInstrument('instr'); return; }
     if (f.t === 'enum') { pickEnumField(ins, f); return; }
+    if (f.t === 'sampler') { openSamplerFor(ui.instr); return; }
     if (f.t === 'text') {
       openEditor({ title: `INST ${hex2(ui.instr)} ${f.l}`, hint: f.hint || '', value: ins[f.k] || '', code: f.code,
         onOk: val => { ins[f.k] = f.k === 'name' ? val.toUpperCase().slice(0, 12) : val.trim(); if (f.k === 'name') ins.userName = true; changed(); } });
@@ -1325,11 +1335,12 @@ function dims(v) {
   if (v === 'song') return [256, NTRK + 1]; if (v === 'chain') return [16, 3]; if (v === 'phrase') return [16, 9];
   if (v === 'instr') return [visFields(instrOf(ui.instr)).length, 1]; if (v === 'mixer') return [7, NTRK + 1];
   if (v === 'project') return [PROJ_ROWS.length, 1]; if (v === 'help') return [HELP.length, 1];
-  if (v === 'browse') return [brEntries().length, 1]; if (v === 'fxchain') return [8, 1]; if (v === 'pick') return [1, 1]; return [1, 1];
+  if (v === 'browse') return [brEntries().length, 1]; if (v === 'fxchain') return [8, 1]; if (v === 'sampler') return [SM ? smRows().length : 1, 1]; if (v === 'pick') return [1, 1]; return [1, 1];
 }
 function moveCursor(dir) {
   const v = ui.view, k = ui.cur[v];
   if (v === 'live') { if (dir === 'left' || dir === 'right') setLiveMode(dir === 'right' ? 1 : -1); return; }
+  if (v === 'sampler' && SM && (dir === 'left' || dir === 'right')) { smAdjust(dir, false); act('move'); return; }
   if (v === 'code') { scrollCode(DIR[dir][1] * 2); return; }
   if (v === 'pick') { if (dir === 'up' || dir === 'down') pkMove(dir === 'up' ? -1 : 1); else if (ui.pk.lr) ui.pk.lr(dir === 'right' ? 1 : -1); else pkMove(dir === 'right' ? 8 : -8); act('move'); return; }
   if (v === 'browse' && (dir === 'left' || dir === 'right')) { dir === 'left' ? brUp() : brEnter(); return; }
@@ -1408,6 +1419,7 @@ function press(b) {
   } else if (b === 'play') {
     if (K.opt) { U.opt = true; redo(); return; }
     if (K.shift) { U.shift = true; setLayer('song', { type:'song', start: ui.cur.song.r }); return; }
+    if (ui.view === 'sampler' && SM) { smPreview(); return; }                  // Y = hear the sample as set
     const v = ui.view;
     const loop = v === 'chain' ? { type:'chain', track: ui.track, chain: ui.chain } : v === 'phrase' ? { type:'phrase', track: ui.track, phrase: ui.phrase } : null;
     if (MODE !== 'dual') {
@@ -1440,13 +1452,14 @@ function fillFromAbove() {
 }
 function optTap() {
   if (ui.view === 'live') { gotoView(ui.back && ui.back !== 'live' ? ui.back : 'song'); act('back'); return; }
+  if (ui.view === 'sampler') { if (SM) smExit(); else backView(); return; }
   if (ui.view === 'phrase' || ui.view === 'chain' || ui.view === 'instr') { if (!ui.sel) { navigate('left'); act('back'); } return; }   // B = come back out
   if (ui.view === 'code') openStrudel();
   else if (ui.view === 'browse') brUp();
   else if (ui.view === 'fxchain') backView();
   else if (ui.view === 'pick') { const pk = ui.pk; backView(); if (pk.cancel) { pk.cancel(); changed(); } status('취소'); }
 }
-const SUBVIEWS = { browse: 1, fxchain: 1, pick: 1 };
+const SUBVIEWS = { browse: 1, fxchain: 1, pick: 1, sampler: 1 };
 function backView() { if (ui.view === 'pick' && ui.back2) { ui.view = ui.back2; ui.back2 = null; } else { ui.view = ui.back && !SUBVIEWS[ui.back] ? ui.back : 'instr'; ui.back2 = null; } render(); act('back'); }
 function openSub(v) { if (ui.sel) ui.sel = null; if (!SUBVIEWS[ui.view]) ui.back = ui.view; else ui.back2 = ui.view; ui.view = v; render(); }
 function toggleHelp() { if (ui.view === 'help') { ui.view = ui.back && ui.back !== 'help' ? ui.back : 'song'; render(); } else { if (!SUBVIEWS[ui.view]) ui.back = ui.view; ui.view = 'help'; ui.cur.help.r = 0; render(); act('help'); } }
@@ -1746,6 +1759,7 @@ function renderInstr(L) {
     else if (f.t === 'enum') l += S(f.show ? f.show(v) : v, 'val' + (r === k.r ? ' cur' : ''), at(r, 0));
     else if (f.k === 'name') { const nm = (v || '').padEnd(12).slice(0, 12); l += r === k.r ? S(nm.slice(0, ui.namePos), 'val') + S(nm[ui.namePos], 'cur') + S(nm.slice(ui.namePos + 1), 'val') : S(nm, 'val'); }
     else if (f.t === 'sound') l += S(v, 'val' + (r === k.r ? ' cur' : ''), at(r, 0)) + '  ' + S(soundCat(v), 'dim');
+    else if (f.t === 'sampler') l += S('✎ 다듬기', 'play' + (r === k.r ? ' cur' : ''), at(r, 0)) + '  ' + S(v ? `${{ shot: 'ONE-SHOT', keys: 'KEYS', slice: 'SLICES' }[v.mode]}${v.rev ? ' · REV' : ''}${v.tune ? ' · ' + (v.tune > 0 ? '+' : '') + v.tune + 'st' : ''}` : '원본 그대로', 'dim');
     else if (f.t === 'fxlist') { const t = v.join(''); l += S(v.length ? String(v.length).padStart(2, '0') : '--', (v.length ? 'val' : 'dim') + (r === k.r ? ' cur' : ''), at(r, 0)) + '  ' + S(t.length > 20 ? t.slice(0, 19) + '…' : t, 'dim'); }
     else { const t = (v || '').replace(/\s+/g, ' '); l += S(t ? (t.length > 22 ? t.slice(0, 21) + '…' : t) : '--', (t ? 'val' : 'dim') + (r === k.r ? ' cur' : ''), at(r, 0)); }
     L.push(l);
@@ -1758,6 +1772,7 @@ function renderInstr(L) {
   if (f.k === 'name') info = '◀▶ 글자 위치  EDIT+▲▼ 글자  OPT+EDIT 자동 이름';
   else if (f.t === 'sound') info = `.s("${ins.snd}")` + (LIB.state === 'loading' ? '  샘플 불러오는 중…' : '');
   else if (f.t === 'fxlist') info = ins.fx.join('') || 'A: Strudel 함수 고르기';
+  else if (f.t === 'sampler') info = smpParams(ins).map(([a, b]) => `.${a}(${b})`).join('') || 'A: 샘플러 열기 (START·END·REVERSE·SLICES…)';
   else if (f.k === 'kt') info = ins.kt === 'OFF' ? '.note(36)' : '노트 그대로';
   else if (f.k === 'tsp') info = signed(ins.tsp) ? `.add(note(${signed(ins.tsp)}))` : '(꺼짐)';
   else if (f.t === 'text') info = f.hint || 'EDIT로 이름 입력';
@@ -1881,6 +1896,7 @@ const HINTS_TOUCH = {
 };
 const HINTS = {
   live: '◀▶ 그림 바꾸기 · Y 재생 · B 돌아가기',
+  sampler: '◀▶ 값 · A 자동/실행 · Y 듣기 · SAVE 로 저장',
   song: '길게 눌러 체인 고르기  위아래로 끌어 값 변경',
   chain: '길게 눌러 프레이즈 고르기  SHIFT+▶ 열기',
   phrase: '길게 눌러 건반·악기·FX 고르기  끌어서 값 변경',
@@ -1895,6 +1911,7 @@ function render() {
   const L = [];
   const v = ui.view;
   if (v === 'code') renderCode();
+  else if (v === 'sampler' && SM) renderSampler();
   else if (v === 'live') {
     renderLive();
     if (!q('.main .stage')) { const m = q('.main'), vis = q('.vis'), h = m.clientHeight + (vis ? vis.offsetHeight : 0); m.innerHTML = '<canvas class="stage"></canvas>'; q('.main .stage').style.height = Math.max(240, h) + 'px'; }
@@ -1907,7 +1924,7 @@ function render() {
   renderSide();
   const fresh = ui.status && performance.now() - ui.statusT < 6000;
   q('.foot').innerHTML = tr(fresh ? S(ui.status, ui.statusErr ? 'warn' : 'val') : S(HINTS_TOUCH[v] || HINTS[v] || '', 'dim'));
-  { const scr = q('.screen'); if (scr) scr.classList.toggle('is-live', v === 'live'); }
+  { const scr = q('.screen'); if (scr) { scr.classList.toggle('is-live', v === 'live'); scr.classList.toggle('is-smp', v === 'sampler'); } }
   renderActbar(); renderOvl(); renderPiano(); renderKeyHints(); drawVis(); renderTutbar(); renderCrumb();
   if (v === 'live') drawStage(performance.now());
 }
@@ -2127,7 +2144,7 @@ function draggable() {
   const v = ui.view, k = ui.cur[v];
   if (v === 'song' || v === 'phrase') return true;
   if (v === 'chain') return k.c === 0 || chainOf(ui.chain).rows[k.r].p != null;
-  if (v === 'instr') { const f = visFields(instrOf(ui.instr))[k.r]; return f && f.t !== 'text'; }
+  if (v === 'instr') { const f = visFields(instrOf(ui.instr))[k.r]; return f && f.t !== 'text' && f.t !== 'sampler'; }
   if (v === 'mixer') return k.r <= 1;
   if (v === 'project') return k.r <= 2;
   return false;
@@ -2200,14 +2217,14 @@ function insPicker(ctx) {
     const ids = Object.keys(P.instrs).map(Number).sort((a, b) => a - b);
     let html = `<div class="srow">${ctx === 'phrase' ? SB('악기 편집 →', 'edit', '', 'pri') + SB('지우기', 'clear') : SB('이름 바꾸기', 'rename', '', 'pri')}</div><div class="sgrid">`;
     ids.forEach(i => { const ins = P.instrs[i]; html += itemBtn('set', i, insColor(i), hex2(i) + ' ' + ins.name, ins.snd === 'custom' ? ins.sname : ins.snd, '', i === cur); });
-    html += `</div><div class="slabel">프리셋으로 새 악기 만들기</div><div class="srow wrap">` + Object.keys(PRESETS).map(n => SB(n, 'preset', n)).join('') + '</div>';
+    html += `</div><div class="srow">` + SB('+ 새 악기 · 사운드 고르기', 'new', '', 'pri') + '</div>';
     return { title: ctx === 'phrase' ? `스텝 ${ui.cur.phrase.r.toString(16).toUpperCase()} 악기` : '악기 목록', html, act: (a, v) => {
       const pick = id => {
         if (ctx === 'phrase') { step.i = id; ui.last.ins = id; audition(step.n != null && step.n >= 0 ? step.n : ui.last.note, id); changed(); }
         else { ui.instr = id; ui.last.ins = id; audition(ui.last.note, id); changed(); }
       };
       if (a === 'set') pick(+v);
-      else if (a === 'preset') { const id = nextUnused('instr'); P.instrs[id] = presetInstr(v); pick(id); status(`악기 ${hex2(id)} ${v} 추가`); }
+      else if (a === 'new') { const id = nextUnused('instr'); ensureInstr(id); pick(id); closeSheet(); openSoundSelect(id, true); }
       else if (a === 'clear') { step.i = null; changed(); closeSheet(); }
       else if (a === 'edit') { ui.instr = cur; closeSheet(); gotoView('instr'); }
       else if (a === 'rename') { closeSheet(); ui.cur.instr.r = 0; editTap(); }
@@ -2298,7 +2315,7 @@ function openSheet() {
   if (v === 'instr') {
     const ins = ensureInstr(ui.instr), f = visFields(ins)[k.r];
     if (f.k === 'name') return insPicker('instr');
-    if (f.t === 'sound' || f.t === 'fxlist') return editTap();
+    if (f.t === 'sound' || f.t === 'fxlist' || f.t === 'sampler') return editTap();
     if (f.t === 'text') return editTap();
     if (f.t === 'enum') return showSheet(() => ({ title: f.l, html: '<div class="sgrid">' + f.opts.map(o => SB((f.show ? f.show(o) : o), 'set', o, ins[f.k] === o ? 'on' : '')).join('') + '</div>',
       act: (a, o) => { ins[f.k] = o; changed(); audition(ui.last.note, ui.instr); } }));
@@ -2498,6 +2515,7 @@ const SYN_ENTRIES = [
   ['hat', 'Closed Hat', 'hat'], ['hat', 'Open Hat', 'hat', { dec: 70 }], ['cymbal', 'Synth Ride', 'hat', { dec: 120, gain: 40 }], ['tom', 'Timpani', 'timpani'],
   ['perc', 'Rim', 'rim'], ['perc', 'Clave', 'clave'], ['perc', 'Shaker', 'shaker'], ['bell', 'Triangle', 'triangle'],
   ['fx', 'Wind', 'wind'], ['fx', 'Vinyl Crackle', 'vinyl'],
+  ['lead', 'Supersaw Lead', 'supersaw'], ['fx', 'Noise Sweep', 'noise'],
 ];
 // GM soundfonts (General MIDI programs; same instruments as Strudel's gm_* sounds)
 const GM = {"gm_piano":["0000_JCLive_sf2_file","0000_FluidR3_GM_sf2_file","0000_Aspirin_sf2_file"],"gm_epiano1":["0040_JCLive_sf2_file","0040_FluidR3_GM_sf2_file","0040_Aspirin_sf2_file"],"gm_epiano2":["0050_JCLive_sf2_file","0050_FluidR3_GM_sf2_file","0050_Aspirin_sf2_file"],"gm_harpsichord":["0060_JCLive_sf2_file","0060_FluidR3_GM_sf2_file","0060_Aspirin_sf2_file"],"gm_clavinet":["0070_JCLive_sf2_file","0070_FluidR3_GM_sf2_file","0070_Aspirin_sf2_file"],"gm_celesta":["0080_JCLive_sf2_file","0080_Aspirin_sf2_file","0080_Chaos_sf2_file"],"gm_glockenspiel":["0090_JCLive_sf2_file","0090_Aspirin_sf2_file","0090_Chaos_sf2_file"],"gm_music_box":["0100_JCLive_sf2_file","0100_Aspirin_sf2_file","0100_Chaos_sf2_file"],"gm_vibraphone":["0110_JCLive_sf2_file","0110_Aspirin_sf2_file","0110_Chaos_sf2_file"],"gm_marimba":["0120_JCLive_sf2_file","0120_Aspirin_sf2_file","0120_Chaos_sf2_file"],"gm_xylophone":["0130_JCLive_sf2_file","0130_Aspirin_sf2_file","0130_Chaos_sf2_file"],"gm_tubular_bells":["0140_JCLive_sf2_file","0140_Aspirin_sf2_file","0140_FluidR3_GM_sf2_file"],"gm_dulcimer":["0150_Aspirin_sf2_file","0150_Chaos_sf2_file","0150_FluidR3_GM_sf2_file"],"gm_drawbar_organ":["0160_JCLive_sf2_file","0160_Aspirin_sf2_file","0160_Chaos_sf2_file"],"gm_percussive_organ":["0170_JCLive_sf2_file","0170_Aspirin_sf2_file","0170_Chaos_sf2_file"],"gm_rock_organ":["0180_JCLive_sf2_file","0180_Aspirin_sf2_file","0180_Chaos_sf2_file"],"gm_church_organ":["0190_JCLive_sf2_file","0190_Aspirin_sf2_file","0190_Chaos_sf2_file"],"gm_reed_organ":["0200_JCLive_sf2_file","0200_Aspirin_sf2_file","0200_Chaos_sf2_file"],"gm_accordion":["0210_JCLive_sf2_file","0210_FluidR3_GM_sf2_file","0210_GeneralUserGS_sf2_file"],"gm_harmonica":["0220_FluidR3_GM_sf2_file","0220_JCLive_sf2_file","0220_Aspirin_sf2_file"],"gm_bandoneon":["0230_Aspirin_sf2_file","0230_JCLive_sf2_file","0230_Chaos_sf2_file"],"gm_acoustic_guitar_nylon":["0240_JCLive_sf2_file","0240_Aspirin_sf2_file","0240_Chaos_sf2_file"],"gm_acoustic_guitar_steel":["0253_Acoustic_Guitar_sf2_file","0250_Aspirin_sf2_file","0250_Chaos_sf2_file"],"gm_electric_guitar_jazz":["0260_JCLive_sf2_file","0260_Aspirin_sf2_file","0260_Chaos_sf2_file"],"gm_electric_guitar_clean":["0270_Aspirin_sf2_file","0270_Chaos_sf2_file","0270_FluidR3_GM_sf2_file"],"gm_electric_guitar_muted":["0280_Aspirin_sf2_file","0280_Chaos_sf2_file","0280_GeneralUserGS_sf2_file"],"gm_overdriven_guitar":["0290_FluidR3_GM_sf2_file","0290_Aspirin_sf2_file","0290_Chaos_sf2_file"],"gm_distortion_guitar":["0300_FluidR3_GM_sf2_file","0300_Aspirin_sf2_file","0300_Chaos_sf2_file"],"gm_guitar_harmonics":["0310_Aspirin_sf2_file","0310_FluidR3_GM_sf2_file","0310_Chaos_sf2_file"],"gm_acoustic_bass":["0320_JCLive_sf2_file","0320_FluidR3_GM_sf2_file","0320_Aspirin_sf2_file"],"gm_electric_bass_finger":["0330_JCLive_sf2_file","0330_FluidR3_GM_sf2_fible","0330_Aspirin_sf2_file"],"gm_electric_bass_pick":["0340_JCLive_sf2_file","0340_FluidR3_GM_sf2_file","0340_Aspirin_sf2_file"],"gm_fretless_bass":["0350_Aspirin_sf2_file","0350_JCLive_sf2_file"],"gm_slap_bass_1":["0360_Aspirin_sf2_file","0360_JCLive_sf2_file","0360_FluidR3_GM_sf2_file"],"gm_slap_bass_2":["0370_Aspirin_sf2_file","0370_FluidR3_GM_sf2_file","0370_GeneralUserGS_sf2_fil e"],"gm_synth_bass_1":["0380_Chaos_sf2_file","0380_FluidR3_GM_sf2_file","0380_JCLive_sf2_file"],"gm_synth_bass_2":["0390_Aspirin_sf2_file","0390_FluidR3_GM_sf2_file","0390_GeneralUserGS_sf2_file"],"gm_violin":["0400_Aspirin_sf2_file","0400_Chaos_sf2_file","0400_JCLive_sf2_file"],"gm_viola":["0410_Aspirin_sf2_file","0410_FluidR3_GM_sf2_file","0410_GeneralUserGS_sf2_file"],"gm_cello":["0420_Aspirin_sf2_file","0420_FluidR3_GM_sf2_file","0420_GeneralUserGS_sf2_file"],"gm_contrabass":["0430_Aspirin_sf2_file","0430_Chaos_sf2_file","0430_GeneralUserGS_sf2_file"],"gm_tremolo_strings":["0440_Aspirin_sf2_file","0440_Chaos_sf2_file","0440_GeneralUserGS_sf2_file"],"gm_pizzicato_strings":["0450_Aspirin_sf2_file","0450_Chaos_sf2_file","0450_FluidR3_GM_sf2_file"],"gm_orchestral_harp":["0460_Aspirin_sf2_file","0460_FluidR3_GM_sf2_file","0460_GeneralUserGS_sf2_file"],"gm_timpani":["0470_Aspirin_sf2_file","0470_Chaos_sf2_file","0470_FluidR3_GM_sf2_file"],"gm_string_ensemble_1":["0480_Aspirin_sf2_file","0480_Chaos_sf2_file","0480_FluidR3_GM_sf2_file"],"gm_string_ensemble_2":["0490_Aspirin_sf2_file","0490_Chaos_sf2_file","0490_FluidR3_GM_sf2_file"],"gm_synth_strings_1":["0500_Aspirin_sf2_file","0500_GeneralUserGS_sf2_file","0500_JCLive_sf2_file"],"gm_synth_strings_2":["0510_Aspirin_sf2_file","0510_Chaos_sf2_file","0510_GeneralUserGS_sf2_file"],"gm_choir_aahs":["0520_Aspirin_sf2_file","0520_Chaos_sf2_file","0520_FluidR3_GM_sf2_file"],"gm_voice_oohs":["0530_Aspirin_sf2_file","0530_Chaos_sf2_file","0530_FluidR3_GM_sf2_file"],"gm_synth_choir":["0540_Aspirin_sf2_file","0540_Chaos_sf2_file","0540_FluidR3_GM_sf2_file"],"gm_orchestra_hit":["0550_Aspirin_sf2_file","0550_Chaos_sf2_file","0550_FluidR3_GM_sf2_file"],"gm_trumpet":["0560_FluidR3_GM_sf2_file","0560_JCLive_sf2_file","0560_Aspirin_sf2_file"],"gm_trombone":["0570_Aspirin_sf2_file","0570_Chaos_sf2_file","0570_FluidR3_GM_sf2_file"],"gm_tuba":["0580_FluidR3_GM_sf2_file","0580_Aspirin_sf2_file","0580_Chaos_sf2_file"],"gm_muted_trumpet":["0590_JCLive_sf2_file","0590_Aspirin_sf2_file","0590_Chaos_sf2_file"],"gm_french_horn":["0600_Aspirin_sf2_file","0600_FluidR3_GM_sf2_file","0600_GeneralUserGS_sf2_file"],"gm_brass_section":["0610_JCLive_sf2_file","0610_Aspirin_sf2_file","0610_Chaos_sf2_file"],"gm_synth_brass_1":["0620_Aspirin_sf2_file","0620_FluidR3_GM_sf2_file","0621_Aspirin_sf2_file"],"gm_synth_brass_2":["0630_Aspirin_sf2_file","0630_Chaos_sf2_file","0630_FluidR3_GM_sf2_file"],"gm_soprano_sax":["0640_JCLive_sf2_file","0640_Aspirin_sf2_file","0640_Chaos_sf2_file"],"gm_alto_sax":["0650_JCLive_sf2_file","0650_Chaos_sf2_file","0650_FluidR3_GM_sf2_file"],"gm_tenor_sax":["0660_JCLive_sf2_file","0660_Aspirin_sf2_file","0660_Chaos_sf2_file"],"gm_baritone_sax":["0670_JCLive_sf2_file","0670_Aspirin_sf2_file","0670_Chaos_sf2_file"],"gm_oboe":["0680_JCLive_sf2_file","0680_Chaos_sf2_file","0680_FluidR3_GM_sf2_file"],"gm_english_horn":["0690_JCLive_sf2_file","0690_Aspirin_sf2_file","0690_FluidR3_GM_sf2_file"],"gm_bassoon":["0700_JCLive_sf2_file","0700_FluidR3_GM_sf2_file","0700_GeneralUserGS_sf2_file"],"gm_clarinet":["0710_JCLive_sf2_file","0710_Aspirin_sf2_file","0710_Chaos_sf2_file"],"gm_piccolo":["0720_JCLive_sf2_file","0720_Aspirin_sf2_file","0720_FluidR3_GM_sf2_file"],"gm_flute":["0730_JCLive_sf2_file","0730_Aspirin_sf2_file","0730_FluidR3_GM_sf2_file"],"gm_recorder":["0740_JCLive_sf2_file","0740_Aspirin_sf2_file","0740_Chaos_sf2_file"],"gm_pan_flute":["0750_JCLive_sf2_file","0750_FluidR3_GM_sf2_file","0750_Aspirin_sf2_file"],"gm_blown_bottle":["0760_FluidR3_GM_sf2_file","0760_JCLive_sf2_file","0760_Chaos_sf2_file"],"gm_shakuhachi":["0770_JCLive_sf2_file","0771_FluidR3_GM_sf2_file","0770_Aspirin_sf2_file"],"gm_whistle":["0780_FluidR3_GM_sf2_file","0780_JCLive_sf2_file","0780_Aspirin_sf2_file"],"gm_ocarina":["0790_FluidR3_GM_sf2_file","0790_JCLive_sf2_file","0790_Aspirin_sf2_file"],"gm_lead_1_square":["0800_Aspirin_sf2_file","0800_Chaos_sf2_file","0800_FluidR3_GM_sf2_file"],"gm_lead_2_sawtooth":["0810_JCLive_sf2_file","0810_Aspirin_sf2_file","0810_Chaos_sf2_file"],"gm_lead_3_calliope":["0820_JCLive_sf2_file","0820_Aspirin_sf2_file","0820_Chaos_sf2_file"],"gm_lead_4_chiff":["0830_JCLive_sf2_file","0830_Aspirin_sf2_file","0830_FluidR3_GM_sf2_file"],"gm_lead_5_charang":["0840_JCLive_sf2_file","0840_FluidR3_GM_sf2_file","0840_Aspirin_sf2_file"],"gm_lead_6_voice":["0850_JCLive_sf2_file","0850_Aspirin_sf2_file","0850_FluidR3_GM_sf2_file"],"gm_lead_7_fifths":["0860_JCLive_sf2_file","0860_Aspirin_sf2_file","0860_Chaos_sf2_file"],"gm_lead_8_bass_lead":["0870_JCLive_sf2_file","0870_Aspirin_sf2_file","0870_Chaos_sf2_file"],"gm_pad_new_age":["0880_JCLive_sf2_file","0880_Aspirin_sf2_file","0880_Chaos_sf2_file"],"gm_pad_warm":["0890_JCLive_sf2_file","0890_Aspirin_sf2_file","0890_Chaos_sf2_file"],"gm_pad_poly":["0900_JCLive_sf2_file","0900_Chaos_sf2_file","0900_FluidR3_GM_sf2_file"],"gm_pad_choir":["0910_FluidR3_GM_sf2_file","0910_JCLive_sf2_file","0910_Aspirin_sf2_file"],"gm_pad_bowed":["0920_JCLive_sf2_file","0920_Aspirin_sf2_file","0920_GeneralUserGS_sf2_file"],"gm_pad_metallic":["0930_Aspirin_sf2_file","0930_Chaos_sf2_file","0930_FluidR3_GM_sf2_file"],"gm_pad_halo":["0940_Chaos_sf2_file","0940_FluidR3_GM_sf2_file","0940_GeneralUserGS_sf2_file"],"gm_pad_sweep":["0950_Aspirin_sf2_file","0950_Chaos_sf2_file","0950_FluidR3_GM_sf2_file"],"gm_fx_rain":["0960_FluidR3_GM_sf2_file","0960_Chaos_sf2_file","0960_GeneralUserGS_sf2_file"],"gm_fx_soundtrack":["0970_FluidR3_GM_sf2_file","0970_Aspirin_sf2_file","0970_GeneralUserGS_sf2_file"],"gm_fx_crystal":["0980_Aspirin_sf2_file","0980_JCLive_sf2_file","0980_Chaos_sf2_file"],"gm_fx_atmosphere":["0990_JCLive_sf2_file","0990_Aspirin_sf2_file","0990_Chaos_sf2_file"],"gm_fx_brightness":["1000_JCLive_sf2_file","1000_Aspirin_sf2_file","1000_Chaos_sf2_file"],"gm_fx_goblins":["1010_FluidR3_GM_sf2_file","1010_JCLive_sf2_file","1010_Aspirin_sf2_file"],"gm_fx_echoes":["1020_FluidR3_GM_sf2_file","1020_JCLive_sf2_file","1020_Aspirin_sf2_file"],"gm_fx_sci_fi":["1030_FluidR3_GM_sf2_file","1030_Aspirin_sf2_file","1030_Chaos_sf2_file"],"gm_sitar":["1040_Aspirin_sf2_file","1040_FluidR3_GM_sf2_file","1040_JCLive_sf2_file"],"gm_banjo":["1050_FluidR3_GM_sf2_file","1050_JCLive_sf2_file","1050_Aspirin_sf2_file"],"gm_shamisen":["1060_JCLive_sf2_file","1060_FluidR3_GM_sf2_file","1060_Aspirin_sf2_file"],"gm_koto":["1070_FluidR3_GM_sf2_file","1070_JCLive_sf2_file","1070_Aspirin_sf2_file"],"gm_kalimba":["1080_JCLive_sf2_file","1080_FluidR3_GM_sf2_file","1080_Aspirin_sf2_file"],"gm_bagpipe":["1090_Aspirin_sf2_file"],"gm_fiddle":["1100_JCLive_sf2_file","1100_Aspirin_sf2_file","1100_Chaos_sf2_file"],"gm_shanai":["1110_Aspirin_sf2_file","1110_FluidR3_GM_sf2_file","1110_JCLive_sf2_file"],"gm_tinkle_bell":["1120_Aspirin_sf2_file"],"gm_agogo":["1130_JCLive_sf2_file","1130_Aspirin_sf2_file","1130_Chaos_sf2_file"],"gm_steel_drums":["1140_FluidR3_GM_sf2_file","1140_Aspirin_sf2_file","1140_JCLive_sf2_file"],"gm_woodblock":["1150_JCLive_sf2_file","1150_Aspirin_sf2_file","1150_Chaos_sf2_file"],"gm_taiko_drum":["1160_JCLive_sf2_file","1160_FluidR3_GM_sf2_file","1160_Aspirin_sf2_file"],"gm_melodic_tom":["1170_JCLive_sf2_file","1170_Aspirin_sf2_file","1170_Chaos_sf2_file"],"gm_synth_drum":["1180_JCLive_sf2_file","1180_Aspirin_sf2_file","1180_Chaos_sf2_file"],"gm_reverse_cymbal":["1190_JCLive_sf2_file","1190_Aspirin_sf2_file","1190_Chaos_sf2_file"],"gm_guitar_fret_noise":["1200_JCLive_sf2_file","1200_Aspirin_sf2_file","1200_Chaos_sf2_file"],"gm_breath_noise":["1210_FluidR3_GM_sf2_file","1210_JCLive_sf2_file","1210_Aspirin_sf2_file"],"gm_seashore":["1220_JCLive_sf2_file","1220_Aspirin_sf2_file","1220_Chaos_sf2_file"],"gm_bird_tweet":["1230_FluidR3_GM_sf2_file","1230_JCLive_sf2_file","1230_Aspirin_sf2_file"],"gm_telephone":["1240_JCLive_sf2_file","1240_Aspirin_sf2_file","1240_Chaos_sf2_file"],"gm_helicopter":["1250_JCLive_sf2_file","1250_Aspirin_sf2_file","1250_FluidR3_GM_sf2_file"],"gm_applause":["1260_JCLive_sf2_file","1260_Aspirin_sf2_file","1260_Chaos_sf2_file"],"gm_gunshot":["1270_JCLive_sf2_file","1270_Aspirin_sf2_file","1270_Chaos_sf2_file"]};
@@ -2559,6 +2577,7 @@ function entryInstr(e, name) {
   const pitched = e.kind === 'gm' || LIB.pitched.has(e.snd);
   const ins = newInstr(name, { snd: e.snd, kt: pitched ? 'ON' : 'OFF', att: 0, dec: e.kind === 'gm' ? 200 : 40, sus: 255, rel: e.kind === 'gm' ? 64 : 16, ft: 'OFF', sn: 0 });
   ins.fb = recipeFor(e.cat);
+  if (e.kind === 'mine' && MY.meta[e.snd] && MY.meta[e.snd].smp) applySmp(ins, MY.meta[e.snd].smp);
   return ins;
 }
 const entryName = e => e.label.toUpperCase().replace(/^\+ |^● /, '').slice(0, 12);
@@ -2567,7 +2586,7 @@ function entryInfo(e) {
   if (e.kind === 'synth') return `◆ 신스 레시피 · 다운로드 없이 바로`;
   if (e.kind === 'gm') return `GM ${e.prog + 1} ${e.label} · 사운드폰트 · ${SF.ready[e.snd + '|0'] ? '받아둠' : SF.failed.has(e.snd) ? '받지 못함 (신스로 대신)' : '처음 쓸 때 한 번 받음'}`;
   if (e.kind === 'sample') return `● ${soundCat(e.snd)} · ${SMP.alias[e.snd] ? '받아둠' : '처음 쓸 때 받음'}`;
-  if (e.kind === 'mine') return '★ 내가 가져온 소리 · X: 지우기';
+  if (e.kind === 'mine') return '★ 내가 가져온 소리 · X: 지우기 · INSTR → SAMPLER 로 다듬기';
   if (e.act === 'import') return 'wav · mp3 · ogg 파일을 골라 내 소리로 (여러 개 가능)';
   if (e.act === 'browse') return '샘플 팩 폴더 그대로 (Strudel sounds 탭과 같은 출처별 정리)';
   if (e.act === 'record') return MY.rec ? `● 녹음 중 ${MY.rec.sec.toFixed(1)}s · A: 멈추고 저장` : '마이크로 녹음해 내 소리로 · A: 시작/멈춤';
@@ -2721,7 +2740,7 @@ function registerGM() {
 }
 
 // ===================== my sounds: import files, record the microphone =====================
-const MY = { list: [], ready: {}, rec: null, db: null };
+const MY = { list: [], ready: {}, rec: null, db: null, meta: {} };
 function myDB() {
   if (MY.db) return MY.db;
   MY.db = new Promise((res, rej) => { try { const r = indexedDB.open('strudel-tracker-sounds', 1); r.onupgradeneeded = () => r.result.createObjectStore('s', { keyPath: 'name' }); r.onsuccess = () => res(r.result); r.onerror = () => rej(r.error); } catch (e) { rej(e); } });
@@ -2729,6 +2748,7 @@ function myDB() {
 }
 const idb = async (mode, fn) => { const db = await myDB(); return new Promise((res, rej) => { const tx = db.transaction('s', mode), st = tx.objectStore('s'), q = fn(st); tx.oncomplete = () => res(q && q.result); tx.onerror = () => rej(tx.error); }); };
 async function registerMine(rec) {
+  MY.meta[rec.name] = { smp: rec.smp || null, label: rec.label };
   const url = URL.createObjectURL(new Blob([rec.data], { type: rec.type || 'audio/wav' }));
   await strudel.samples({ [rec.name]: [url] }, '');
   MY.ready[rec.name] = true;
@@ -2738,12 +2758,16 @@ async function registerMine(rec) {
 async function initMySounds() {
   try { const all = await idb('readonly', st => st.getAll()); for (const r of all || []) await registerMine(r); if (all && all.length) soundSwap(); } catch (e) {}
 }
-async function saveMine(label, data, type) {
+async function saveMine(label, data, type, smp = null) {
   let base = 'my_' + (label.toLowerCase().replace(/\.[^.]+$/, '').replace(/[^a-z0-9]+/g, '_').replace(/^_|_$/g, '') || 'sound').slice(0, 20), name = base, k = 2;
   while (MY.list.some(m => m.name === name)) name = base + '_' + k++;
-  const rec = { name, label: label.replace(/\.[^.]+$/, '').slice(0, 24), data, type, date: Date.now() };
+  const rec = { name, label: label.replace(/\.[^.]+$/, '').slice(0, 24), data, type, smp, date: Date.now() };
   try { await idb('readwrite', st => st.put(rec)); } catch (e) { status('브라우저에 저장하지 못했어요 (이번 세션에서만 쓸 수 있어요)', true); }
   await registerMine(rec); return name;
+}
+async function updateMineSmp(name, smp, label) {              // the sampler's settings only; the audio stays as it was
+  try { const rec = await idb('readonly', st => st.get(name)); if (rec) { rec.smp = smp; rec.label = label.slice(0, 24); await idb('readwrite', st => st.put(rec)); } } catch (e) { status('브라우저에 저장하지 못했어요 (이번 세션에서만 쓸 수 있어요)', true); }
+  MY.meta[name] = { smp, label }; const m = MY.list.find(x => x.name === name); if (m) m.label = label; catCache = null;
 }
 async function deleteMySound(name) {
   try { await idb('readwrite', st => st.delete(name)); } catch (e) {}
@@ -2757,6 +2781,12 @@ function importSounds(insId) {
   const inp = document.createElement('input'); inp.type = 'file'; inp.accept = 'audio/*,.wav,.mp3,.ogg,.flac,.m4a'; inp.multiple = true;
   inp.onchange = async () => {
     const files = [...inp.files]; if (!files.length) return;
+    if (files.length === 1) {
+      const f = files[0];
+      try { const buf = await f.arrayBuffer(); await ctx().decodeAudioData(buf.slice(0)); if (ui.view === 'pick') backView(); openSampler({ data: buf, type: f.type, label: f.name.replace(/\.[^.]+$/, ''), insId, fresh: true }); }
+      catch (e) { status(`${f.name}: 읽을 수 없는 소리 파일이에요`, true); }
+      return;
+    }
     let first = null;
     for (const f of files) {
       try { const buf = await f.arrayBuffer(); await ctx().decodeAudioData(buf.slice(0)); const name = await saveMine(f.name, buf, f.type); first = first || { name, label: f.name.replace(/\.[^.]+$/, '') }; }
@@ -2789,24 +2819,255 @@ async function toggleRecord(insId) {
   catch (e) { status('마이크를 쓸 수 없어요. 게시된 페이지에서는 막혀 있어요: 다운로드한 파일로 열거나 "파일 가져오기"를 쓰세요', true); return; }
   const mr = new MediaRecorder(stream), chunks = [], t0 = performance.now();
   MY.rec = { mr, sec: 0 };
-  const iv = setInterval(() => { if (!MY.rec) return; MY.rec.sec = (performance.now() - t0) / 1000; if (MY.rec.sec > 20) mr.stop(); if (ui.view === 'pick' && ui.pk && ui.pk.rebuild) ui.pk.rebuild(); status(`● 녹음 중 ${MY.rec.sec.toFixed(1)}s · A: 멈추고 저장`); }, 200);
+  const iv = setInterval(() => { if (!MY.rec) return; MY.rec.sec = (performance.now() - t0) / 1000; if (MY.rec.sec > 20) mr.stop(); if (ui.view === 'pick' && ui.pk && ui.pk.rebuild) ui.pk.rebuild(); status(`● 녹음 중 ${MY.rec.sec.toFixed(1)}s · A: 멈추고 샘플러로`); }, 200);
   mr.ondataavailable = e => chunks.push(e.data);
   mr.onstop = async () => {
     clearInterval(iv); stream.getTracks().forEach(t => t.stop()); MY.rec = null;
     try {
-      const raw = await new Blob(chunks).arrayBuffer(), ab = await ctx().decodeAudioData(raw), d = ab.getChannelData(0);
-      let a = 0, b = d.length - 1; const th = 0.02;
-      while (a < b && Math.abs(d[a]) < th) a++; while (b > a && Math.abs(d[b]) < th) b--;     // trim silence
-      a = Math.max(0, a - Math.round(ab.sampleRate * 0.01)); b = Math.min(d.length - 1, b + Math.round(ab.sampleRate * 0.05));
-      const out = ctx().createBuffer(1, Math.max(1, b - a), ab.sampleRate); out.getChannelData(0).set(d.subarray(a, b));
+      const raw = await new Blob(chunks).arrayBuffer(), ab = await ctx().decodeAudioData(raw);
       const label = 'rec ' + new Date().toTimeString().slice(0, 5).replace(':', '');
-      const name = await saveMine(label, wavBytes(out), 'audio/wav');
-      applyMine(insId, name, label);
-      if (ui.view === 'pick' && ui.pk && ui.pk.rebuild) ui.pk.rebuild();
+      if (ui.view === 'pick') backView();
+      openSampler({ data: wavBytes(ab), type: 'audio/wav', label, insId, fresh: true });   // trim, shape, then SAVE
     } catch (e) { status('녹음을 저장하지 못했어요', true); }
     renderAll();
   };
   mr.start();
+}
+
+// ===================== SAMPLER: shape a recording or a file with Strudel's own sample controls =====================
+// Nothing is cut out of the audio. START/END → .begin/.end · REVERSE → negative .speed · TUNE → .speed ·
+// FADE → attack/release · LOOP → .loop/.loopBegin/.loopEnd · SLICES → begin/end chosen by the note (C2 = slice 1).
+// The original file stays as it was, so every setting can be changed again later (INSTR → SAMPLER).
+let SM = null, smDraftN = 0, smAutoT = 0;
+const r5 = x => +(+x).toFixed(5);
+function smBounds(s) {                                  // slice edges inside the region, as fractions of the whole file
+  if (!s || s.mode !== 'slice') return null;
+  if (s.sl === 'auto') { const on = (s.onsets || []).filter(x => x > s.b + 0.004 && x < s.e - 0.004); return [s.b, ...on, s.e]; }
+  const n = +s.sl || 4; return Array.from({ length: n + 1 }, (_, i) => s.b + (s.e - s.b) * i / n);
+}
+function smpParams(ins) {
+  const s = ins.smp; if (!s) return [];
+  const flip = (a, z) => s.rev ? [1 - z, 1 - a] : [a, z], out = [];
+  const [b, e] = flip(s.b, s.e);
+  if (b > 0) out.push(['begin', r5(b)]); if (e < 1) out.push(['end', r5(e)]);
+  const sp = (s.rev ? -1 : 1) * Math.pow(2, (s.tune || 0) / 12); if (sp !== 1) out.push(['speed', r5(sp)]);
+  if (s.mode === 'keys' && s.loop) { const [lb, le] = flip(s.lb, s.e); out.push(['loop', 1], ['loopBegin', r5(lb)], ['loopEnd', r5(le)]); }
+  return out;
+}
+function smpSliceCode(ins) {
+  const s = ins.smp, B = smBounds(s); if (!B || B.length < 3) return '';
+  const S = B.slice(0, -1).map((x, i) => s.rev ? [r5(1 - B[i + 1]), r5(1 - x)] : [r5(x), r5(B[i + 1])]);
+  return `.withValue(v => { const S = ${JSON.stringify(S)}, k = ((Math.round(typeof v.note === 'number' ? v.note : 36) - 36) % S.length + S.length) % S.length; return Object.assign({}, v, { begin: S[k][0], end: S[k][1], note: 36 }); })`;
+}
+function smModeFields(ins) { const s = ins.smp; ins.kt = s.mode === 'shot' ? 'OFF' : 'ON'; ins.tsp = s.mode === 'keys' ? ((36 - s.root) % 256 + 256) % 256 : 0; }
+function applySmp(ins, s) { ins.smp = JSON.parse(JSON.stringify(s)); ['att', 'rel', 'gain'].forEach(k => { if (s[k] != null) ins[k] = s[k]; }); smModeFields(ins); return ins; }
+function collectSmp(ins) { return Object.assign(JSON.parse(JSON.stringify(ins.smp)), { att: ins.att, rel: ins.rel, gain: ins.gain }); }
+
+// ---- analysis: silence edges, hits (onsets), pitch, peak ----
+function smMono(buf) { const n = buf.length, d = new Float32Array(n); for (let c = 0; c < buf.numberOfChannels; c++) { const x = buf.getChannelData(c); for (let i = 0; i < n; i++) d[i] += x[i] / buf.numberOfChannels; } return d; }
+function smTrim(d, sr) {
+  let pk = 0; for (let i = 0; i < d.length; i++) pk = Math.max(pk, Math.abs(d[i]));
+  const th = Math.max(0.004, pk * 0.04); let a = 0, b = d.length - 1;
+  while (a < b && Math.abs(d[a]) < th) a++; while (b > a && Math.abs(d[b]) < th) b--;
+  a = Math.max(0, a - Math.round(sr * 0.005)); b = Math.min(d.length - 1, b + Math.round(sr * 0.06));
+  return [a / d.length, (b + 1) / d.length];
+}
+function smOnsets(d, sr) {
+  const hop = 256, frames = Math.floor(d.length / hop), en = new Float32Array(frames), out = [];
+  for (let f = 0; f < frames; f++) { let s = 0; for (let i = f * hop; i < (f + 1) * hop; i++) s += d[i] * d[i]; en[f] = Math.sqrt(s / hop); }
+  let pk = 0; en.forEach(x => { pk = Math.max(pk, x); });
+  let last = -1e9; const gap = Math.round(sr * 0.07 / hop);
+  for (let f = 4; f < frames; f++) {
+    let avg = 0; for (let j = f - 4; j < f; j++) avg += en[j]; avg /= 4;
+    if (en[f] > pk * 0.08 && en[f] > avg * 1.8 + pk * 0.02 && f - last > gap) { out.push(Math.max(0, f - 1) * hop / d.length); last = f; }
+  }
+  return out.map(r5);
+}
+function smPitch(d, sr, a, b) {                           // autocorrelation on the loudest part of the region
+  const N = 2048; let s0 = Math.floor(a * d.length), s1 = Math.floor(b * d.length); if (s1 - s0 < N * 2) return null;
+  let best = s0, be = 0; for (let i = s0; i + N < s1; i += 512) { let e = 0; for (let j = i; j < i + N; j += 4) e += d[j] * d[j]; if (e > be) { be = e; best = i; } }
+  const x = d.subarray(best, best + N), lo = Math.floor(sr / 1100), hi = Math.floor(sr / 50);
+  let bl = 0, bc = 0; for (let lag = lo; lag < hi && lag < N / 2; lag++) { let c = 0; for (let i = 0; i < N - lag; i++) c += x[i] * x[i + lag]; if (c > bc) { bc = c; bl = lag; } }
+  if (!bl) return null; const f = sr / bl; return Math.round(69 + 12 * Math.log2(f / 440));
+}
+function smPeak(d, a, b) { let p = 0; for (let i = Math.floor(a * d.length); i < Math.floor(b * d.length); i++) p = Math.max(p, Math.abs(d[i])); return p; }
+
+// ---- open / close ----
+async function openSampler(o) {                         // o: { data, type, label, insId, existing?, ins? , fresh? }
+  try {
+    const buf = await ctx().decodeAudioData(o.data.slice(0)), d = smMono(buf);
+    let snd = o.existing;
+    if (!snd) { snd = 'my_draft' + (++smDraftN); await strudel.samples({ [snd]: [URL.createObjectURL(new Blob([o.data], { type: o.type || 'audio/wav' }))] }, ''); MY.ready[snd] = true; }
+    const ins = o.ins ? JSON.parse(JSON.stringify(o.ins)) : entryInstr({ kind: 'mine', snd, cat: 'mine' }, o.label.toUpperCase().slice(0, 12));
+    ins.snd = snd; ins.name = (o.ins && o.ins.name) || o.label.toUpperCase().slice(0, 12); ins.userName = true;
+    if (!ins.smp) {
+      const [b, e] = o.fresh ? smTrim(d, buf.sampleRate) : [0, 1];
+      applySmp(ins, { b: r5(b), e: r5(e), rev: false, tune: 0, mode: 'shot', root: 60, loop: false, lb: r5(b + (e - b) * 0.5), sl: 'auto', onsets: [], att: 0, rel: 16, gain: 128 });
+    }
+    if (!ins.smp.onsets || !ins.smp.onsets.length) ins.smp.onsets = smOnsets(d, buf.sampleRate);
+    SM = { buf, d, data: o.data, type: o.type || 'audio/wav', label: o.label, insId: o.insId, existing: o.existing || null, ins, dirty: !o.existing, sel: 0, peaks: null, play: null, warn: 0 };
+    ui.cur.sampler = ui.cur.sampler || { r: 0, c: 0 }; ui.cur.sampler.r = 0;
+    openSub('sampler'); act('pick');
+    status(o.existing ? `샘플러: ${o.label} · 원본은 그대로, 설정만 바뀌어요` : `샘플러: ${o.label} · 다듬고 SAVE 로 저장 (아직 저장 안 됨)`);
+    smPreview();
+  } catch (e) { status('이 소리는 샘플러에서 열 수 없어요: ' + e.message, true); }
+}
+async function openSamplerFor(insId) {
+  const ins = P.instrs[insId]; if (!ins || !String(ins.snd).startsWith('my_')) { status('내 소리(★)로 만든 악기만 샘플러에서 다듬을 수 있어요', true); return; }
+  let rec = null; try { rec = await idb('readonly', st => st.get(ins.snd)); } catch (e) {}
+  if (!rec) { status('이 소리의 원본을 찾을 수 없어요 (브라우저 저장소)', true); return; }
+  openSampler({ data: rec.data, type: rec.type, label: rec.label, insId, existing: ins.snd, ins });
+}
+function smExit(force) {
+  if (!force && SM && SM.dirty && performance.now() - SM.warn > 2500) { SM.warn = performance.now(); status('저장하지 않은 샘플이에요 · B 한 번 더 = 저장 안 하고 나가기', true); render(); return; }
+  clearTimeout(smAutoT); SM = null; backView(); status(force ? '' : '샘플러를 닫았어요');
+}
+async function smSave(asNew) {
+  if (!SM) return;
+  const label = (SM.ins.name || SM.label).trim() || SM.label, smp = collectSmp(SM.ins);
+  let snd = SM.existing;
+  if (snd && !asNew) await updateMineSmp(snd, smp, label);
+  else snd = await saveMine(label, SM.data, SM.type, smp);
+  const ins = JSON.parse(JSON.stringify(SM.ins)); ins.snd = snd; ins.name = label.toUpperCase().slice(0, 12);
+  P.instrs[SM.insId] = ins; ui.last.ins = SM.insId;
+  const id = SM.insId; SM.dirty = false; smExit(true); changed();
+  status(`저장됨 ★ ${label} → MY SOUNDS · 악기 ${hex2(id)}`);
+}
+
+// ---- rows ----
+function smRows() {
+  const s = SM.ins.smp, R = ['START', 'END', 'FADE IN', 'FADE OUT', 'GAIN', 'REVERSE', 'TUNE', 'MODE'];
+  if (s.mode === 'keys') { R.push('ROOT', 'LOOP'); if (s.loop) R.push('LOOP AT'); }
+  if (s.mode === 'slice') R.push('SLICES', 'SLICE');
+  R.push('NAME', 'SAVE'); if (SM.existing) R.push('SAVE AS NEW');
+  return R;
+}
+const smDur = () => SM.buf.duration;
+const smSec = f => (f * smDur()).toFixed(3) + 's';
+function smVal(row) {
+  const ins = SM.ins, s = ins.smp, B = smBounds(s);
+  switch (row) {
+    case 'START': return [smSec(s.b), '.begin'];
+    case 'END': return [smSec(s.e), `.end · 길이 ${((s.e - s.b) * smDur()).toFixed(2)}s`];
+    case 'FADE IN': return [fmtS(envT(ins.att)), '.attack'];
+    case 'FADE OUT': return [fmtS(envT(ins.rel)), '.release · 노트가 끝난 뒤'];
+    case 'GAIN': { const pk = smPeak(SM.d, s.b, s.e), db = pk ? 20 * Math.log10(pk * ins.gain / 128) : -99; return [(ins.gain / 128).toFixed(2), `.gain · 피크 ${db.toFixed(1)}dB · A 노멀라이즈`]; }
+    case 'REVERSE': return [s.rev ? 'ON' : 'OFF', '.speed(-) 거꾸로'];
+    case 'TUNE': { const t = s.tune || 0; return [(t >= 0 ? '+' : '') + t + 'st', `.speed(${r5((s.rev ? -1 : 1) * Math.pow(2, t / 12))})`]; }
+    case 'MODE': return [{ shot: 'ONE-SHOT', keys: 'KEYS', slice: 'SLICES' }[s.mode], { shot: '음높이 그대로 (드럼·효과음)', keys: '건반처럼 음높이 따라감', slice: '노트마다 조각: C2=1번 C#2=2번…' }[s.mode]];
+    case 'ROOT': return [noteName(s.root), '원래 음높이 · A 자동 찾기'];
+    case 'LOOP': return [s.loop ? 'ON' : 'OFF', '.loop · 길게 누르면 계속 울림'];
+    case 'LOOP AT': return [smSec(s.lb), '.loopBegin ~ END'];
+    case 'SLICES': return [s.sl === 'auto' ? 'AUTO' : String(s.sl), `${B ? B.length - 1 : 0}조각 · ${s.sl === 'auto' ? '소리가 시작되는 곳마다' : '똑같이 나누기'}`];
+    case 'SLICE': { const n = B ? B.length - 1 : 1, k = Math.min(SM.sel, n - 1); return [`${k + 1}/${n}`, `노트 ${noteName(36 + k)} · Y 듣기`]; }
+    case 'NAME': return [(ins.name || '').padEnd(12).slice(0, 12), 'A 키보드 · A+▲▼ 글자'];
+    case 'SAVE': return [SM.existing ? '설정 저장' : 'MY SOUNDS 에 저장', `→ 악기 ${hex2(SM.insId)}`];
+    case 'SAVE AS NEW': return ['새 소리로 저장', '원본을 복사해 새 이름으로'];
+  }
+  return ['', ''];
+}
+function smAdjust(dir, coarse) {
+  const ins = SM.ins, s = ins.smp, row = smRows()[ui.cur.sampler.r], d = (dir === 'right' || dir === 'up') ? 1 : -1;
+  const big = coarse && (dir === 'up' || dir === 'down'), D = smDur(), ms = x => x / 1000 / D;
+  const minLen = ms(10);
+  let hear = true;
+  switch (row) {
+    case 'START': s.b = r5(clamp(s.b + d * ms(big ? 100 : 5), 0, s.e - minLen)); if (s.lb < s.b) s.lb = s.b; break;
+    case 'END': s.e = r5(clamp(s.e + d * ms(big ? 100 : 5), s.b + minLen, 1)); if (s.lb > s.e - minLen) s.lb = r5(s.e - minLen); break;
+    case 'FADE IN': ins.att = clamp(ins.att + d * (big ? 16 : 2), 0, 255); break;
+    case 'FADE OUT': ins.rel = clamp(ins.rel + d * (big ? 16 : 2), 0, 255); break;
+    case 'GAIN': ins.gain = clamp(ins.gain + d * (big ? 16 : 2), 0, 255); break;
+    case 'REVERSE': s.rev = !s.rev; break;
+    case 'TUNE': s.tune = clamp((s.tune || 0) + d * (big ? 12 : 1), -36, 36); break;
+    case 'MODE': { const m = ['shot', 'keys', 'slice']; s.mode = m[(m.indexOf(s.mode) + d + 3) % 3]; smModeFields(ins); SM.sel = 0; break; }
+    case 'ROOT': s.root = clamp(s.root + d * (big ? 12 : 1), 12, 108); smModeFields(ins); break;
+    case 'LOOP': s.loop = !s.loop; break;
+    case 'LOOP AT': s.lb = r5(clamp(s.lb + d * ms(big ? 100 : 5), s.b, s.e - minLen)); break;
+    case 'SLICES': { const o = ['auto', 2, 4, 8, 16]; s.sl = o[(o.indexOf(s.sl) + d + o.length) % o.length]; SM.sel = 0; break; }
+    case 'SLICE': { const n = smBounds(s).length - 1; SM.sel = (SM.sel + d + n) % n; break; }
+    case 'NAME': nameEditPlain(ins, dir); hear = false; break;
+    default: hear = false;
+  }
+  if (row !== 'NAME' && row !== 'SAVE' && row !== 'SAVE AS NEW') SM.dirty = true;
+  render();
+  if (hear) { clearTimeout(smAutoT); smAutoT = setTimeout(smPreview, row === 'SLICE' ? 0 : 320); }
+}
+function nameEditPlain(ins, dir) {
+  if (dir === 'left' || dir === 'right') { ui.namePos = clamp(ui.namePos + (dir === 'right' ? 1 : -1), 0, 11); return; }
+  const nm = (ins.name || '').padEnd(12).slice(0, 12).split(''), i = Math.max(0, NAMECH.indexOf(nm[ui.namePos]));
+  nm[ui.namePos] = NAMECH[(i + (dir === 'up' ? 1 : -1) + NAMECH.length) % NAMECH.length]; ins.name = nm.join('').trimEnd() || ' ';
+}
+function smTap() {
+  const ins = SM.ins, s = ins.smp, row = smRows()[ui.cur.sampler.r];
+  if (row === 'START' || row === 'END') { const [b, e] = smTrim(SM.d, SM.buf.sampleRate); if (row === 'START') s.b = r5(Math.min(b, s.e - 0.001)); else s.e = r5(Math.max(e, s.b + 0.001)); SM.dirty = true; status('조용한 부분을 잘라냈어요 (자동)'); }
+  else if (row === 'GAIN') { const pk = smPeak(SM.d, s.b, s.e); if (pk > 0) { ins.gain = clamp(Math.round(128 * 0.89 / pk), 8, 255); SM.dirty = true; status('노멀라이즈: 피크 -1dB'); } }
+  else if (row === 'ROOT') { const m = smPitch(SM.d, SM.buf.sampleRate, s.b, s.e); if (m) { s.root = m; smModeFields(ins); SM.dirty = true; status(`음높이 찾음: ${noteName(m)}`); } else status('음높이를 찾지 못했어요 (짧거나 소음)', true); }
+  else if (row === 'SLICES') { s.onsets = smOnsets(SM.d, SM.buf.sampleRate); s.sl = 'auto'; SM.dirty = true; status(`소리가 시작되는 곳 ${smBounds(s).length - 1}개를 찾았어요`); }
+  else if (row === 'NAME') { openEditor({ title: 'SAMPLE NAME', hint: '', value: ins.name || '', onOk: v => { ins.name = v.toUpperCase().slice(0, 12); render(); } }); return; }
+  else if (row === 'SAVE') { smSave(false); return; }
+  else if (row === 'SAVE AS NEW') { smSave(true); return; }
+  else if (['REVERSE', 'LOOP', 'MODE'].includes(row)) { smAdjust('right'); return; }
+  render(); smPreview();
+}
+function smPreview() {
+  if (!SM) return;
+  const ins = SM.ins, s = ins.smp, B = smBounds(s), sp = Math.pow(2, (s.tune || 0) / 12);
+  let n = 36, from = s.b, to = s.e;
+  if (s.mode === 'keys') n = s.root;
+  if (s.mode === 'slice' && B) { const k = Math.min(SM.sel, B.length - 2); n = 36 + k; from = B[k]; to = B[k + 1]; }
+  const dur = Math.min(10, Math.max(0.05, (to - from) * smDur() / sp));
+  previewNotes([n], ins, 1, null, dur);
+  SM.play = { t0: ctx().currentTime + 0.04, dur, from: s.rev ? to : from, to: s.rev ? from : to };
+}
+
+// ---- drawing ----
+function renderSampler() {
+  const m = q('.main'); if (!m) return;
+  if (!m.querySelector('.wave')) m.innerHTML = '<canvas class="wave"></canvas><div class="smlines"></div>';
+  const rows = smRows(), k = ui.cur.sampler; k.r = clamp(k.r, 0, rows.length - 1);
+  const top = Math.max(0, Math.min(k.r - 5, rows.length - 11)), L = [];
+  for (let i = top; i < Math.min(rows.length, top + 11); i++) {
+    const [v, info] = smVal(rows[i]), cur = i === k.r;
+    let val = S(v, 'val' + (cur ? ' cur' : ''));
+    if (rows[i] === 'NAME' && cur) { const nm = v; val = S(nm.slice(0, ui.namePos), 'val') + S(nm[ui.namePos], 'cur') + S(nm.slice(ui.namePos + 1), 'val'); }
+    if (rows[i].startsWith('SAVE')) val = S(v, 'play' + (cur ? ' cur' : ''));
+    L.push(S((cur ? '▸' : ' ') + rows[i].padEnd(11), cur ? 'acc' : 'lbl') + val + '  ' + S(info, 'dim'));
+  }
+  m.querySelector('.smlines').innerHTML = tr(L.map(l => `<div class="ln">${l}</div>`).join(''));
+  hdr('SAMPLER', null, (SM.existing ? '★ ' : '● ') + SM.label + (SM.dirty ? ' *' : ''));
+  drawWave();
+}
+function drawWave() {
+  const cv = SM && ui.root && ui.root.querySelector('.main .wave'); if (!cv) return;
+  const dpr = window.devicePixelRatio || 1, W = cv.clientWidth, H = cv.clientHeight; if (!W || !H) return;
+  if (cv.width !== Math.round(W * dpr) || cv.height !== Math.round(H * dpr)) { cv.width = Math.round(W * dpr); cv.height = Math.round(H * dpr); SM.peaks = null; }
+  const g = cv.getContext('2d'); g.setTransform(dpr, 0, 0, dpr, 0, 0);
+  const d = SM.d, s = SM.ins.smp, col = insColor(SM.insId) || '#34d4ff', X = f => f * W, mid = H / 2;
+  if (!SM.peaks || SM.peaks.length !== Math.floor(W)) {
+    const n = Math.floor(W), per = d.length / n; SM.peaks = new Float32Array(n * 2);
+    for (let x = 0; x < n; x++) { let lo = 0, hi = 0; for (let i = Math.floor(x * per), e = Math.min(d.length, Math.floor((x + 1) * per)); i < e; i++) { if (d[i] < lo) lo = d[i]; if (d[i] > hi) hi = d[i]; } SM.peaks[x * 2] = lo; SM.peaks[x * 2 + 1] = hi; }
+  }
+  let pk = 0.001; for (let i = 0; i < SM.peaks.length; i++) pk = Math.max(pk, Math.abs(SM.peaks[i]));
+  const sc = (H * 0.44) / pk;
+  g.fillStyle = '#07080a'; g.fillRect(0, 0, W, H);
+  g.fillStyle = 'rgba(255,255,255,0.04)'; g.fillRect(X(s.b), 0, X(s.e) - X(s.b), H);
+  for (let x = 0; x < SM.peaks.length; x++) {
+    const inR = x >= X(s.b) && x <= X(s.e);
+    g.fillStyle = inR ? col : '#2a3140';
+    g.fillRect(x, mid - SM.peaks[x * 2 + 1] * sc, 1, Math.max(1, (SM.peaks[x * 2 + 1] - SM.peaks[x * 2]) * sc));
+  }
+  const line = (f, c, w = 1) => { g.fillStyle = c; g.fillRect(Math.round(X(f)) - (w >> 1), 0, w, H); };
+  const B = smBounds(s);
+  if (B) { B.slice(1, -1).forEach(f => line(f, 'rgba(255,255,255,0.55)')); g.font = '10px ui-monospace,monospace'; B.slice(0, -1).forEach((f, i) => { const on = i === Math.min(SM.sel, B.length - 2); if (on) { g.fillStyle = 'rgba(255,255,255,0.10)'; g.fillRect(X(f), 0, X(B[i + 1]) - X(f), H); } g.fillStyle = on ? '#fff' : '#8f99a8'; g.fillText(String(i + 1), X(f) + 3, 11); }); }
+  if (s.mode === 'keys' && s.loop) { g.fillStyle = 'rgba(255,214,90,0.12)'; g.fillRect(X(s.lb), 0, X(s.e) - X(s.lb), H); line(s.lb, '#ffd65a', 2); }
+  line(s.b, '#3ddc84', 2); line(s.e, '#ff5c7a', 2);
+  g.fillStyle = '#8f99a8'; g.font = '10px ui-monospace,monospace';
+  g.fillText(`${smDur().toFixed(2)}s · ${SM.buf.sampleRate}Hz${s.rev ? ' · ◀ REVERSE' : ''}`, 4, H - 4);
+  if (SM.play) {
+    const t = ctx().currentTime - SM.play.t0;
+    if (t > SM.play.dur + 0.05) SM.play = null;
+    else if (t >= 0) line(SM.play.from + (SM.play.to - SM.play.from) * Math.min(1, t / SM.play.dur), '#ffffff', 1);
+  }
 }
 
 // ===================== sound library (Strudel sample packs) =====================
@@ -3199,6 +3460,7 @@ function keyHints() {
   }
   // nothing held
   if (v === 'live') set({ opt: '돌아가기', left: '그림', right: '그림' });
+  else if (v === 'sampler') set({ up: '항목', down: '항목', left: '값 −', right: '값 +', edit: '실행', opt: '나가기' });
   else if (v === 'browse') set({ right: '열기', left: '위로', up: '듣기', down: '듣기', edit: '적용', opt: '뒤로' });
   else if (v === 'pick' && ui.pk && ui.pk.kind === 'snd') set({ up: '듣기', down: '듣기', left: '분류', right: '분류', edit: '적용', opt: '취소' });
   else if (v === 'pick') set({ up: '듣기', down: '듣기', left: ui.pk && ui.pk.lr ? (ui.pk.title === 'SCALE' ? '조' : '자리바꿈') : '', right: ui.pk && ui.pk.lr ? (ui.pk.title === 'SCALE' ? '조' : '자리바꿈') : '', edit: '적용', opt: '취소' });
@@ -3442,8 +3704,7 @@ function pickInstrument(target) {
   const editItem = { v: '__edit', label: `✎ ${instrOf(cur).name} 소리 편집 →`, desc: 'INSTR' };
   const items = [editItem, { head: true, label: '악기' }];   // first row: open the instrument editor
   Object.keys(P.instrs).map(Number).sort((a, b) => a - b).forEach(i => items.push({ v: i, label: hex2(i) + ' ' + P.instrs[i].name, desc: P.instrs[i].snd, color: insColor(i) }));
-  items.push({ head: true, label: '새로 만들기' }, { v: 'snd', label: '+ 사운드에서', desc: '브라우저 열기' });
-  Object.keys(PRESETS).forEach(p => items.push({ v: 'p:' + p, label: '+ ' + p, desc: '프리셋' }));
+  items.push({ head: true, label: '새로 만들기' }, { v: 'snd', label: '+ 새 악기', desc: '사운드 고르기' });
   openPick({ title: target === 'step' ? '악기 고르기' : '악기 목록', sub: s ? `스텝 ${ui.cur.phrase.r.toString(16).toUpperCase()}` : '', items, isCur: it => it.v === cur,
     hover: it => { if (typeof it.v === 'number') audition(n ?? noteFor(it.v), it.v); },
     apply: it => {
@@ -3546,6 +3807,7 @@ function actions() {
     else if (f.t === 'enum') { A('EDIT', '목록'); A(['EDIT', 'DPAD'], '빠르게'); }
     else if (f.t === 'sound') { A('EDIT', '사운드 브라우저'); A(['EDIT', 'DPAD'], '◀▶ 옆 소리 ▲▼ 다른 기계'); }
     else if (f.t === 'fxlist') A('EDIT', '함수 체인 열기');
+    else if (f.t === 'sampler') A('EDIT', '샘플러 열기');
     else if (f.t === 'text') A('EDIT', '입력 (키보드)');
     else { A(['EDIT', 'DPAD'], '값'); A('EDIT', '미리듣기'); }
     A(['OPT', 'DPAD'], '이전/다음 악기'); A('OPT', 'PHRASE 로');
@@ -3557,6 +3819,7 @@ function actions() {
   else if (v === 'project') { A('EDIT', '실행'); A(['EDIT', 'DPAD'], '값'); }
   else if (v === 'help') { A('EDIT', k.r === 0 ? '튜토리얼 시작' : ''); A('DPAD', '스크롤'); }
   else if (v === 'live') { A('DPAD', '◀▶ PIANOROLL · PUNCHCARD · SPIRAL · SCOPE'); A('OPT', '돌아가기'); }
+  else if (v === 'sampler') { A('DPAD', '▲▼ 항목 ◀▶ 값'); A(['EDIT', 'DPAD'], '▲▼ 크게'); A('EDIT', '자동·실행'); A('PLAY', '듣기'); A('OPT', '나가기'); return out; }
   else A('DPAD', '스크롤');
   const lid = MODE === 'dual' ? LETTER[ui.idx] : 'A';
   const looping = (v === 'chain' || v === 'phrase') ? !!play.layers[lid] : !!play.layers.song;
@@ -3586,7 +3849,7 @@ const Q_BYTES = [0x00, 0x01, 0x02, 0x03, 0x04, 0x06, 0x08, 0x0C, 0x10, 0x20, 0x3
 function instrItems(withPresets = true) {
   const ids = Object.keys(P.instrs).map(Number).sort((a, b) => a - b);
   const items = ids.map(i => ({ v: i, label: hex2(i) + ' ' + P.instrs[i].name, sub: P.instrs[i].snd === 'custom' ? P.instrs[i].sname : P.instrs[i].snd, color: insColor(i) }));
-  if (withPresets) { items.push({ v: 'snd', label: '+ 사운드에서 새로', sub: '샘플·드럼머신·신스', color: '#34d4ff' }); Object.keys(PRESETS).forEach(n => items.push({ v: 'p:' + n, label: '+ ' + n, sub: '프리셋으로 새로', color: '#3c4454' })); }
+  if (withPresets) items.push({ v: 'snd', label: '+ 새 악기', sub: '신스·GM·샘플·내 소리', color: '#34d4ff' });
   return items;
 }
 function resolveIns(v) { if (typeof v === 'string' && v.startsWith('p:')) { const id = nextUnused('instr'); P.instrs[id] = goodPreset(v.slice(2)); return id; } return +v; }
@@ -3615,7 +3878,7 @@ function openPicker() {
     if (k.c === 1) return listOvl('벨로시티', [0xFF, 0xE0, 0xC0, 0xA0, 0x80, 0x60, 0x40, 0x20, 0x10].map(b => ({ v:b, label:hex2(b), sub: Math.round(b / 2.55) + '%' })).concat([{ v:null, label:'--', sub:'기본(100%)' }]),
       0, it => { s.v = it.v; if (it.v != null) ui.last.vel = it.v; changed(); }, 4);
     if (k.c === 2) return listOvl('악기', instrItems(), instrItems().findIndex(x => x.v === (s.i ?? ui.last.ins)), it => {
-      if (it.v === 'snd') { const id = nextUnused('instr'); const ins = ensureInstr(id); openSoundPicker(ins, () => { s.i = id; ui.last.ins = id; if (s.n == null) s.n = noteFor(id); changed(); }); return; }
+      if (it.v === 'snd') { const id = nextUnused('instr'); ensureInstr(id); s.i = id; ui.last.ins = id; if (s.n == null) s.n = noteFor(id); changed(); openSoundSelect(id, true); return; }
       const id = resolveIns(it.v); s.i = id; ui.last.ins = id; if (s.n == null) s.n = noteFor(id); audition(s.n, id); changed();
     });
     const j = (k.c - 3) >> 1, f = s.fx[j];
@@ -3625,8 +3888,8 @@ function openPicker() {
   }
   if (v === 'instr') {
     const ins = ensureInstr(ui.instr), f = visFields(ins)[k.r];
-    if (f.t === 'sound' || f.t === 'fxlist') return editTap();
-    if (f.k === 'name') return listOvl('악기 고르기 / 프리셋', instrItems(), instrItems().findIndex(x => x.v === ui.instr), it => { if (it.v === 'snd') { const id = nextUnused('instr'); ui.instr = id; openSoundPicker(ensureInstr(id)); return; } ui.instr = resolveIns(it.v); ui.last.ins = ui.instr; audition(ui.last.note, ui.instr); changed(); });
+    if (f.t === 'sound' || f.t === 'fxlist' || f.t === 'sampler') return editTap();
+    if (f.k === 'name') return listOvl('악기 고르기', instrItems(), instrItems().findIndex(x => x.v === ui.instr), it => { if (it.v === 'snd') { const id = nextUnused('instr'); ensureInstr(id); ui.instr = id; ui.last.ins = id; openSoundSelect(id, true); return; } ui.instr = resolveIns(it.v); ui.last.ins = ui.instr; audition(ui.last.note, ui.instr); changed(); });
     if (f.t === 'enum') return listOvl(f.l, f.opts.map(o => ({ v:o, label: f.show ? f.show(o) : o, sub:'' })), f.opts.indexOf(ins[f.k]), it => { ins[f.k] = it.v; audition(ui.last.note, ui.instr); changed(); }, 3);
     if (f.t === 'byte') return listOvl(`${ins.name} ${f.l}`, Q_BYTES.map(b => ({ v:b, label:hex2(b), sub:f.show(b) })), Q_BYTES.indexOf(ins[f.k]), it => { ins[f.k] = it.v; audition(ui.last.note, ui.instr); changed(); }, 3);
     return status('텍스트는 키보드로 입력해요 (A).');
@@ -3776,6 +4039,7 @@ function liveFrame(ts) {
     const pos = root.querySelector('.crumb .pos');
     if (pos) { const t = playClock(); if (pos.textContent !== t) pos.textContent = t; }
     if (on || ts - liveLast > 500) { if (ui.view === 'live') drawStage(ts); else if (on && VFX === 'full') drawVis(ts); }
+    if (ui.view === 'sampler' && SM && SM.play) drawWave();
   });
   use(keep);
   if (!on) liveLast = ts;
@@ -4161,6 +4425,8 @@ const R = {
   vinyl: (o = {}, fx = []) => K('crackle', { att: 0, dec: 200, sus: 255, rel: 60, ft: 'HPF', cut: 150, gain: 38, ...o }, fx),
   wind: (o = {}, fx = []) => K('pink', { att: 120, dec: 200, sus: 220, rel: 200, gain: 55, room: 150, rsize: 120, ...o }, ['.bpf(sine.range(400, 1800).slow(8)).bpq(3)', '.pan(sine.slow(12))', ...fx]),
   timpani: (o = {}, fx = []) => K('sine', { att: 0, dec: 130, sus: 0, rel: 60, penv: 16, pdec: 40, gain: 207, room: 100, rsize: 70, ...o }, [RATTLE(400, 0.3, 0.25), HUM, ...fx]),
+  supersaw: (o = {}, fx = []) => K('supersaw', { att: 6, dec: 90, sus: 150, rel: 60, ft: 'LPF', cut: 170, res: 30, det: 60, gain: 70, room: 80, ...o }, fx),
+  noise: (o = {}, fx = []) => K('pink', { att: 60, dec: 120, sus: 100, rel: 120, ft: 'BPF', cut: 160, res: 80, fenv: 80, fdec: 120, gain: 70, room: 120, ...o }, fx),
   triangle: (o = {}, fx = []) => K('sine', { tsp: 36, att: 0, dec: 110, sus: 0, rel: 90, fm: 40, fmh: 70, gain: 155, room: 90, ...o }, [HUM, ...fx]),
 };
 // genre kits: small, well-recorded samples where they matter (drums, piano, mallets, organ), synth recipes elsewhere.
@@ -5110,7 +5376,7 @@ requestAnimationFrame(tick);
   } catch (e) { status('Strudel 초기화 실패: ' + e.message, true); }
 })();
 
-window.__t = { buildPianoSwing, pattern: () => repl && repl.scheduler && repl.scheduler.pattern, songTiming: () => songTiming(), buildElectroSwing: () => buildElectroSwing(), buildJazz: k => buildJazz(k), qBpm: () => qBpm(), openSoundPicker: (i, n) => openSoundSelect(i, n), editTap: () => editTap(), soundCatalog: () => soundCatalog(), entryBadge: e => entryBadge(e), get SCAT() { return SCAT; }, SF, MY, AN, instrOf: i => instrOf(i), visFields: i => visFields(i), withFallback: q => withFallback(q) };
+window.__t = { buildPianoSwing, openSampler, openSamplerFor, smRows, smBounds, smpSliceCode, smpParams, get SM() { return SM; }, pattern: () => repl && repl.scheduler && repl.scheduler.pattern, songTiming: () => songTiming(), buildElectroSwing: () => buildElectroSwing(), buildJazz: k => buildJazz(k), qBpm: () => qBpm(), openSoundPicker: (i, n) => openSoundSelect(i, n), editTap: () => editTap(), soundCatalog: () => soundCatalog(), entryBadge: e => entryBadge(e), get SCAT() { return SCAT; }, SF, MY, AN, instrOf: i => instrOf(i), visFields: i => visFields(i), withFallback: q => withFallback(q) };
 window.__m8 = { R, kitInstr, buildCoastline, get audition() { return audition; }, get ctxTap() { const c = strudel.getAudioContext(); return c && c.__tap; }, withFallback, SMP, FILLS, visFields, instrOf, PATLIB, patTokens, GENRES, startGenre, buildGenreSong, songTiming, get P() { return P; }, decks, get ui() { return ui; }, play, press, release, startPlay, compile, get repl() { return repl; }, get ready() { return ready; }, get evalErr() { return evalErr; } };
 })();
 </script>
